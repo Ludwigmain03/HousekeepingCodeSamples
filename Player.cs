@@ -23,9 +23,6 @@ public class Player : NetworkBehaviour
 
         if (!gm.ready)
             spawnPlayer.Select();
-
-        if (ne != null && ne.dazed || catchScript != null && catchScript.caught)
-            return;
     }
 
     public void OnJoin()
