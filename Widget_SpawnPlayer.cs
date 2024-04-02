@@ -17,13 +17,17 @@ public class Widget_SpawnPlayer : MonoBehaviour
     int playerIdx;
     public bool gremlin;
     GameManager gm;
+    bool tutorial;
 
     [Header("Ready Up Information")]
     public bool ready = false;
     public GameObject readyPrompt;
+    public GameObject joinPrompt;
     public GameObject readyMark;
     public Transform[] UIPositions;
     public Transform selectionIcon;
+    public Image buttonPromptImg;
+    [NamedArray(typeof(eController))] public Sprite[] buttonSprites;
     int UIPosition;
     bool playerClassLocked;
     public TMP_Text startText;
@@ -33,20 +37,31 @@ public class Widget_SpawnPlayer : MonoBehaviour
 
     [Header("Naming UI")]
     public GameObject keyboard;
+    public TMP_Text charLimitText;
     public Image[] letters;
     int focusedLetter;
     public bool changingName;
     bool changeNameStall;
     public int characterLimit = 5;
     int namelength;
+    float shakeMagnitude;
+    float shakeProgress;
+    float nameOriginX;
     public Color normal;
     public Color highlight;
     public string savedName;
 
+    [Header("Audio")]
+    AudioSource source;
+    public AudioClip change;
+    public AudioClip select;
+    public AudioClip back;
+
     public void Init(int _index)
     {
         gm = GameManager.gm;
-        if(gm.tm != null)
+        tutorial = gm.tm && !gm.tm.allowOptions;
+        if (tutorial)
         {
             UIPositions[2].gameObject.SetActive(false);
             UIPositions[3].gameObject.SetActive(false);
@@ -59,6 +74,10 @@ public class Widget_SpawnPlayer : MonoBehaviour
         background.color = inactiveColor;
         hatIdx = 0;
         startText.text = readyMessage;
+
+        nameOriginX = playerName.transform.localPosition.x;
+
+        source = GetComponent<AudioSource>();
     }
 
     public void UpdatePlayerName()
@@ -67,29 +86,29 @@ public class Widget_SpawnPlayer : MonoBehaviour
         player.SetUp((eHat)hatIdx, playerName.text);
     }
 
+    void FixedUpdate()
+    {
+        if(shakeMagnitude > 0)
+        {
+            shakeProgress += Time.deltaTime * 35;
+            shakeMagnitude -= Time.deltaTime;
+            float newPos = nameOriginX + shakeMagnitude * 15 * Mathf.Sin(shakeProgress);
+            playerName.transform.localPosition = new Vector3(newPos, playerName.transform.localPosition.y, 0);
+            charLimitText.transform.localScale = Vector3.one * (1 + (shakeMagnitude * 0.5f));
+        }
+
+        if(player != null)
+            buttonPromptImg.sprite = buttonSprites[player.GetControllerType()];
+    }
+
     public void SetUpPlayer()
     {
         //Get players set up when they first enter the game
         active = true;
         selectionIcon.gameObject.SetActive(true);
         readyPrompt.SetActive(true);
-        gm.cReadyUpScene.startPrompt.SetActive(false);
+        joinPrompt.SetActive(false);
 
-        //Get saved player options from PlayerPrefs
-        bool savedOptions = PlayerPrefs.GetInt("SavedOptions" + playerIdx) == 1;
-        if (savedOptions)
-        {
-            playerName.text = PlayerPrefs.GetString("NameOption" + playerIdx);
-            hatIdx = PlayerPrefs.GetInt("HatOption" + playerIdx) - 1;
-        }
-
-        if (gm.tm == null && savedOptions)
-        {
-            player.colorIdx = PlayerPrefs.GetInt("ColorOption" + playerIdx) - 1;
-            gremlin = !(PlayerPrefs.GetInt("GremlinOption" + playerIdx) == 1);
-        }
-        else 
-        {
             player.colorIdx = playerIdx - 1;
             if ((playerIdx) % 2 == 0)
             {
@@ -97,7 +116,6 @@ public class Widget_SpawnPlayer : MonoBehaviour
                 gremlin = true;
             }
             playerName.text = "Player " + (playerIdx + 1);
-        }
 
         if (gremlin)
             player.playerInfo = Instantiate(Resources.Load("Widgets/" + "Widget_PlayerInfo") as GameObject, gm.canvasUI.scoreHolder[1]).GetComponent<Widget_PlayerInfo>();
@@ -110,9 +128,11 @@ public class Widget_SpawnPlayer : MonoBehaviour
         ChangeHat();
         playerPedestal.SetHat(hatIdx);
         ToggleClass();
-        PlayerPrefs.SetInt("SavedOptions" + playerIdx, 1);
+        //PlayerPrefs.SetInt("SavedOptions" + playerIdx, 1);
 
         gm.CheckReady();
+
+        source.PlayOneShot(select);
     }
 
     public void ReadyUp()
@@ -126,6 +146,8 @@ public class Widget_SpawnPlayer : MonoBehaviour
         {
             startText.text = unreadyMessage;
             startText.color = stateColors[0];
+
+            source.PlayOneShot(select);
         }
         else
         {
@@ -139,13 +161,17 @@ public class Widget_SpawnPlayer : MonoBehaviour
         //Toggles whether the player is changing their name or not
         changingName = _active;
         keyboard.SetActive(changingName);
+        charLimitText.gameObject.SetActive(changingName);
         if (changingName)
         {
             //Resets name if longer than character limit
             if(playerName.text.Length > characterLimit)
+            {
                 playerName.text = "";
+            }
 
             namelength = playerName.text.Length;
+            charLimitText.text = namelength + "/" + characterLimit;
         }
         else
         {
@@ -154,8 +180,9 @@ public class Widget_SpawnPlayer : MonoBehaviour
                 playerName.text = "Player " + (playerIdx + 1);
 
             player.playerInfo.playerName.text = playerName.text;
+            /*
             PlayerPrefs.SetString("NameOption" + playerIdx, playerName.text);
-            Debug.Log(PlayerPrefs.GetString("NameOption" + playerIdx));
+            Debug.Log(PlayerPrefs.GetString("NameOption" + playerIdx));*/
         }
 
         int tempFocus = focusedLetter;
@@ -174,6 +201,8 @@ public class Widget_SpawnPlayer : MonoBehaviour
             int tempFocus = focusedLetter;
             focusedLetter += (dir * 6);
             FocusLetter(tempFocus);
+
+            source.PlayOneShot(change);
         }
         else
         {
@@ -188,6 +217,7 @@ public class Widget_SpawnPlayer : MonoBehaviour
                     UIPosition = (UIPositions.Length - 1);
             }
 
+            source.PlayOneShot(change);
             selectionIcon.position = UIPositions[UIPosition].position;
         }
     }
@@ -200,6 +230,8 @@ public class Widget_SpawnPlayer : MonoBehaviour
             int tempFocus = focusedLetter;
             focusedLetter += dir;
             FocusLetter(tempFocus);
+
+            source.PlayOneShot(change);
         }
     }
 
@@ -226,17 +258,41 @@ public class Widget_SpawnPlayer : MonoBehaviour
             if (focusedLetter == 28) // Player selects enter to finalize name
             {
                 ChangeName(false);
-                changeNameStall = true; 
+                changeNameStall = true;
+
+                source.PlayOneShot(select);
             }
             else if (focusedLetter == 27 && namelength > 0) // Player selects delete to remove a character 
+            {
                 playerName.text = playerName.text.Substring(0, playerName.text.Length - 1);
+
+                source.PlayOneShot(back);
+            }
             else if (focusedLetter == 26 && namelength < characterLimit) // Player selects space
+            {
                 playerName.text += " ";
-            else if(namelength < characterLimit) // Player selects any other character
+
+                source.PlayOneShot(select);
+            } 
+            else if (namelength < characterLimit && focusedLetter != 27) // Player selects any other character
+            { 
                 playerName.text += letters[focusedLetter].name;
 
+                source.PlayOneShot(select);
+            }
+            else
+            {
+                shakeMagnitude = 0.7f;
+
+                source.PlayOneShot(back);
+            }
+
             namelength = playerName.text.Length;
+            charLimitText.text = namelength + "/" + characterLimit;
         }
+
+        if (!changingName)
+            source.PlayOneShot(select);
 
         switch (UIPosition) 
         {
@@ -258,15 +314,16 @@ public class Widget_SpawnPlayer : MonoBehaviour
                 ToggleClass();
                 break;
         }
-
     }
 
     public void Undo()
     {
         if (changingName)
         {
-            playerName.text = savedName;
+            //playerName.text = savedName;
             ChangeName(false);
+
+            source.PlayOneShot(back);
         }
     }
 
@@ -293,8 +350,6 @@ public class Widget_SpawnPlayer : MonoBehaviour
         hatText.text = "Hat: " + player.myHat.ToString();
         playerPedestal.SetHat(hatIdx);
         player.SetUp((eHat)hatIdx, playerName.text);
-
-        PlayerPrefs.SetInt("HatOption" + playerIdx, hatIdx);
     }
 
     void ChangeColor()
@@ -340,19 +395,17 @@ public class Widget_SpawnPlayer : MonoBehaviour
 
         if (gremlin)
         {
-            PlayerPrefs.SetInt("GremlinOption" + playerIdx, 1);
             player.playerClass = eClassType.gremlin;
         }
         else
         {
-            PlayerPrefs.SetInt("GremlinOption" + playerIdx, 0);
             player.playerClass = eClassType.keeper;
         }
 
         playerType.text = gm.classObjects[(int)player.playerClass].realName;
         ChangeColor();
 
-        playerClassLocked = ((PlayerPrefs.GetInt("SelectionMode") == 1) || gm.tm != null);
+        playerClassLocked = ((PlayerPrefs.GetInt("SelectionMode") == 1) || tutorial);
     }
 
     void SetColor()
